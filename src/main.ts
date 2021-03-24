@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BufferConverter, OauthClient, ScryptedDeviceBase, ScryptedMimeTypes, Setting, Settings } from '@scrypted/sdk';
+import { BufferConverter, DeviceProvider, OauthClient, ScryptedDeviceBase, ScryptedInterface, ScryptedMimeTypes, Setting, Settings } from '@scrypted/sdk';
 import qs from 'query-string';
 import { GcmRtcManager, GcmRtcConnection } from './legacy';
 import { Duplex } from 'stream';
@@ -8,6 +8,9 @@ import HttpProxy from 'http-proxy';
 import { Server, createServer } from 'http';
 import Url from 'url';
 import {once} from 'events';
+import sdk from '@scrypted/sdk';
+
+const {deviceManager} = sdk;
 
 export const DEFAULT_SENDER_ID = '827888101440';
 
@@ -29,6 +32,28 @@ export async function createDefaultRtcManager(): Promise<GcmRtcManager> {
     return manager;
 }
 
+async function whitelist(localUrl: string, ttl: number): Promise<Buffer|string> {
+    const local = Url.parse(localUrl);
+    const token_info = localStorage.getItem('token_info');
+    const q = qs.stringify({
+        scope: local.path,
+        ttl,
+    })
+    const scope = await axios(`https://home.scrypted.app/_punch/scope?${q}`, {
+        headers: {
+            Authorization: `Bearer ${token_info}`
+        },
+    })
+
+    const {userToken, userTokenSignature} = scope.data;
+    const tokens = qs.stringify({
+        user_token: userToken,
+        user_token_signature: userTokenSignature
+    })
+
+    const url = `https://home.scrypted.app${local.path}?${tokens}`;
+    return url;
+}
 
 class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings, BufferConverter {
     manager: GcmRtcManager;
@@ -40,31 +65,12 @@ class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings,
 
         this.initialize();
 
-        this.fromMimeType = ScryptedMimeTypes.LocalUrl;
+        this.fromMimeType = `${ScryptedMimeTypes.LocalUrl};${ScryptedMimeTypes.AcceptUrlParameter}=true`;
         this.toMimeType = ScryptedMimeTypes.Url;
     }
 
-    async convert(buffer: Buffer, fromMimeType: string): Promise<Buffer> {
-        const local = Url.parse(buffer.toString());
-        const token_info = localStorage.getItem('token_info');
-        const q = qs.stringify({
-            scope: local.path,
-            ttl: 10 * 365 * 24 * 60 * 60 * 1000,
-        })
-        const scope = await axios(`https://home.scrypted.app/_punch/scope?${q}`, {
-            headers: {
-                Authorization: `Bearer ${token_info}`
-            },
-        })
-
-        const {userToken, userTokenSignature} = scope.data;
-        const tokens = qs.stringify({
-            user_token: userToken,
-            user_token_signature: userTokenSignature
-        })
-
-        const url = `https://home.scrypted.app${local.path}?${tokens}`;
-        return Buffer.from(url);
+    async convert(data: Buffer|string, fromMimeType: string): Promise<Buffer|string> {
+        return whitelist(data.toString(), 10 * 365 * 24 * 60 * 60 * 1000);
     }
 
     async getSettings(): Promise<Setting[]> {

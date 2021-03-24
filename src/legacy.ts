@@ -483,8 +483,20 @@ export class GcmRtcManager extends EventEmitter {
       localStorage.setItem('fcm', JSON.stringify(credentials));
     }
 
-    await listen({ ...credentials, persistentIds: [] }, (notification: any) => {
+    let persistentIds = [];
+    try {
+      persistentIds = JSON.parse(localStorage.getItem('persistentIds'));
+    }
+    catch (e) {
+    }
+
+    const backoff = Date.now();
+    let client = await listen({ ...credentials, persistentIds: [] }, (notification: any) => {
       try {
+        localStorage.setItem('persistentIds', JSON.stringify(client._persistentIds));
+        // check timestamp/type instead?
+        if (Date.now() < backoff + 5000)
+          return;
         self.onMessage(notification.notification.data);
       }
       catch (e) {
