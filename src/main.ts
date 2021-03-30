@@ -4,6 +4,7 @@ import qs from 'query-string';
 import { GcmRtcManager, GcmRtcConnection } from './legacy';
 import { Duplex } from 'stream';
 import net from 'net';
+import tls from 'tls';
 import HttpProxy from 'http-proxy';
 import { Server, createServer } from 'http';
 import Url from 'url';
@@ -125,11 +126,23 @@ class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings,
                 return;
             }
 
-            if (req.headers.upgrade == 'websocket')
-                this.proxy.ws(req, req.socket, { target: 'https://localhost:9443', ws: true, secure: false });
-            else
-                this.proxy.web(req, res);
-        }).listen(0);
+            this.proxy.web(req, res, undefined, (err) => console.error(err));
+        });
+
+        this.server.on('upgrade', (req, socket, head) => {
+            this.proxy.ws(req, socket, head, { target: 'wss://localhost:9443', ws: true, secure: false });
+        })
+
+        // this.server = net.createServer(conn => console.log('connectionz')) as any;
+        
+        // listen(0) does not work in a cluster!!!
+        // https://nodejs.org/api/cluster.html#cluster_how_it_works
+        // server.listen(0) Normally, this will cause servers to listen on a random port.
+        // However, in a cluster, each worker will receive the same "random" port each time they
+        // do listen(0). In essence, the port is random the first time, but predictable thereafter.
+        // To listen on a unique port, generate a port number based on the cluster worker ID.
+        this.server.listen(10081 + Math.round(Math.random() * 10000), '127.0.0.1');
+        
         await once(this.server, 'listening');
         const port = (this.server.address() as any).port;
 
@@ -141,13 +154,27 @@ class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings,
 
         this.manager = await createDefaultRtcManager();
         this.manager.listen("http://localhost", (conn: GcmRtcConnection) => {
-            conn.on('socket', (command: string, socket: Duplex) => {
-                const local = net.connect({
-                    port,
-                    host: 'localhost',
-                })
+            conn.on('socket', async (command: string, socket: Duplex) => {
+                let local: any;
 
-                local.pipe(socket).pipe(local);
+                await new Promise(resolve => process.nextTick(resolve));
+
+                if (true) {
+                    local = net.connect({
+                        port,
+                        host: '127.0.0.1',
+                    });
+                    await new Promise(resolve => process.nextTick(resolve));
+                }
+                else {
+                    local = tls.connect({
+                        port: 9443,
+                        host: '127.0.0.1',
+                        rejectUnauthorized: false,
+                    })
+                }
+
+                socket.pipe(local).pipe(socket);
             });
         })
         
@@ -162,7 +189,6 @@ class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings,
                     Authorization: `Bearer ${token_info}`
                 },
             })
-            console.log(register);
         }
     }
 }
