@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BufferConverter, DeviceProvider, OauthClient, ScryptedDeviceBase, ScryptedInterface, ScryptedMimeTypes, Setting, Settings } from '@scrypted/sdk';
+import { BufferConverter, OauthClient, ScryptedDeviceBase, ScryptedMimeTypes, Setting, Settings } from '@scrypted/sdk';
 import qs from 'query-string';
 import { GcmRtcManager, GcmRtcConnection } from './legacy';
 import { Duplex } from 'stream';
@@ -84,7 +84,7 @@ class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings,
             }
         ]
     }
-    putSetting(key: string, value: string | number | boolean): void {
+    async putSetting(key: string, value: string | number | boolean) {
     }
 
     async getOauthUrl(): Promise<string> {
@@ -95,7 +95,7 @@ class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings,
         return `https://home.scrypted.app/_punch/login?${args}`
     }
 
-    onOauthCallback(callbackUrl: string): void {
+    async onOauthCallback(callbackUrl: string) {
     }
 
     async initialize() {
@@ -183,11 +183,6 @@ class ScryptedCloud extends ScryptedDeviceBase implements OauthClient, Settings,
             const q = qs.stringify({
                 fcm_registration_id: this.manager.registrationId,
                 sender_id: DEFAULT_SENDER_ID,
-            })
-            const register = await axios(`https://home.scrypted.app/_punch/register?${q}`, {
-                headers: {
-                    Authorization: `Bearer ${token_info}`
-                },
             })
         }
     }
